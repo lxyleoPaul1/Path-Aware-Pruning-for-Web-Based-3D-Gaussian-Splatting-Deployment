@@ -1,5 +1,7 @@
 import { Column, DataTable } from './data-table';
 import { KdTree } from '../spatial/kd-tree';
+import { computePathImportanceV5Gpu } from '../gpu/path-importance';
+import type { DeviceCreator } from '../types';
 import { logger } from '../utils';
 
 const TWO_PI_POW_1_5 = Math.pow(2 * Math.PI, 1.5);
@@ -761,6 +763,75 @@ const computePathAwareImportance = (
     return importance;
 };
 
+const computePathAwareImportanceGpuV5 = async (
+    dataTable: DataTable,
+    poses: PathPose[],
+    near: number,
+    far: number,
+    aspect: number,
+    createDevice: DeviceCreator
+): Promise<Float64Array> => {
+    const xCol = dataTable.getColumnByName('x');
+    const yCol = dataTable.getColumnByName('y');
+    const zCol = dataTable.getColumnByName('z');
+    const opacityCol = dataTable.getColumnByName('opacity');
+    const scale0Col = dataTable.getColumnByName('scale_0');
+    const scale1Col = dataTable.getColumnByName('scale_1');
+    const scale2Col = dataTable.getColumnByName('scale_2');
+
+    if (!xCol || !yCol || !zCol || !opacityCol || !scale0Col || !scale1Col || !scale2Col) {
+        throw new Error('filterByPath requires columns: x, y, z, opacity, scale_0, scale_1, scale_2');
+    }
+
+    const n = dataTable.numRows;
+    const gaussiansPacked = new Float32Array(n * 8);
+    for (let i = 0; i < n; i++) {
+        const sx = Math.exp(scale0Col.data[i]);
+        const sy = Math.exp(scale1Col.data[i]);
+        const sz = Math.exp(scale2Col.data[i]);
+        const sigma = Math.cbrt(sx * sy * sz);
+        const alpha = sigmoidStable(opacityCol.data[i]);
+        const base = i * 8;
+        gaussiansPacked[base + 0] = xCol.data[i];
+        gaussiansPacked[base + 1] = yCol.data[i];
+        gaussiansPacked[base + 2] = zCol.data[i];
+        gaussiansPacked[base + 3] = sigma;
+        gaussiansPacked[base + 4] = alpha;
+        gaussiansPacked[base + 5] = 0;
+        gaussiansPacked[base + 6] = 0;
+        gaussiansPacked[base + 7] = 0;
+    }
+
+    const planesByPose = poses.map(pose => computeFrustumPlanes(pose, near, far, aspect));
+    const planesPacked = new Float32Array(poses.length * 24);
+    const posePositionsPacked = new Float32Array(poses.length * 4);
+    for (let i = 0; i < poses.length; i++) {
+        const pp = i * 4;
+        posePositionsPacked[pp + 0] = poses[i].position[0];
+        posePositionsPacked[pp + 1] = poses[i].position[1];
+        posePositionsPacked[pp + 2] = poses[i].position[2];
+        posePositionsPacked[pp + 3] = 0;
+        const pBase = i * 24;
+        for (let k = 0; k < 6; k++) {
+            const plane = planesByPose[i][k];
+            const o = pBase + k * 4;
+            planesPacked[o + 0] = plane[0];
+            planesPacked[o + 1] = plane[1];
+            planesPacked[o + 2] = plane[2];
+            planesPacked[o + 3] = plane[3];
+        }
+    }
+
+    const device = await createDevice();
+    return computePathImportanceV5Gpu(device, {
+        gaussiansPacked,
+        planesPacked,
+        posePositionsPacked,
+        numGaussians: n,
+        numPoses: poses.length
+    });
+};
+
 const quickselect = (values: Float64Array, idx: Uint32Array, k: number): number => {
     const swap = (a: number, b: number) => {
         const t = idx[a];
@@ -801,20 +872,30 @@ const filterByPath = (
     farPlane = 150,
     aspectRatio = 16 / 9,
     formulaVariant: FormulaVariant = 'v5_linear',
-    useGPU = true
-): DataTable => {
+    useGPU = true,
+    createDevice?: DeviceCreator
+): Promise<DataTable> => {
+    const run = async () => {
     if (keepRatio < 0 || keepRatio > 1) {
         throw new Error(`keepRatio must be in [0, 1], got ${keepRatio}`);
-    }
-    if (useGPU) {
-        // TODO(phase-2.4): plug in WebGPU compute path for filterByPath scoring.
     }
 
     const near = nearPlane;
     const far = farPlane;
     const aspect = aspectRatio;
     const keepCount = Math.min(dataTable.numRows, Math.max(0, Math.ceil(dataTable.numRows * keepRatio)));
-    const scores = computePathAwareImportance(dataTable, poses, near, far, aspect, formulaVariant);
+    let scores: Float64Array;
+    if (useGPU && formulaVariant === 'v5_linear' && createDevice) {
+        try {
+            // TODO(phase-2.4): optimize and cache GPU resources for repeated path scoring.
+            scores = await computePathAwareImportanceGpuV5(dataTable, poses, near, far, aspect, createDevice);
+        } catch (e) {
+            logger.warn(`filterByPath GPU fallback to CPU: ${e instanceof Error ? e.message : String(e)}`);
+            scores = computePathAwareImportance(dataTable, poses, near, far, aspect, formulaVariant);
+        }
+    } else {
+        scores = computePathAwareImportance(dataTable, poses, near, far, aspect, formulaVariant);
+    }
     let selectedRows: Uint32Array;
     if (keepCount <= 0) {
         selectedRows = new Uint32Array(0);
@@ -838,6 +919,8 @@ const filterByPath = (
         retainedSplats: filtered.numRows
     };
     return filtered;
+    };
+    return run();
 };
 
 // ====================== MAIN: simplifyGaussians ======================

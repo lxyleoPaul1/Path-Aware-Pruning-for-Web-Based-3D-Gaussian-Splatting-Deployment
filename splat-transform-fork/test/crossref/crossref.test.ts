@@ -4,6 +4,7 @@ import { readFile as fsReadFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Column, readPly, processDataTable } from '../../src/lib/index.js';
+import { createDevice } from '../../src/cli/node-device.js';
 
 class BufferReadSource {
     data: Uint8Array;
@@ -207,5 +208,73 @@ describe('crossref py-ts fixture', () => {
         await mkdir(fixturesDir, { recursive: true });
         await writeFile(tsOutPath, retained.map(v => String(v)).join('\n') + '\n', 'utf-8');
         await writeFile(tsScorePath, JSON.stringify(Array.from(scores)), 'utf-8');
+    });
+
+    it('gpu path agrees with cpu within 0.5% of rows', async (t) => {
+        const fixturesDir = join(process.cwd(), 'test', 'fixtures');
+        const plyPath = join(fixturesDir, 'crossref-1k.ply');
+        const posesPath = join(fixturesDir, 'crossref-10poses.json');
+        const plyBytes = await fsReadFile(plyPath);
+        const posesPayload = JSON.parse((await fsReadFile(posesPath, 'utf-8')));
+        const poses = posesPayload.poses;
+        const near = Number(posesPayload.nearPlane);
+        const far = Number(posesPayload.farPlane);
+        const aspect = Number(posesPayload.aspectRatio);
+        const keepRatio = 0.5;
+
+        const loadTableWithIndex = async () => {
+            const table = await readPly(new BufferReadSource(plyBytes));
+            const idxCol = new Float32Array(table.numRows);
+            for (let i = 0; i < idxCol.length; i++) idxCol[i] = i;
+            table.addColumn(new Column('_cross_idx', idxCol));
+            return table;
+        };
+
+        const cpuTable = await loadTableWithIndex();
+        const cpuFiltered = await processDataTable(cpuTable, [{
+            kind: 'filterByPath',
+            poses,
+            nearPlane: near,
+            farPlane: far,
+            aspectRatio: aspect,
+            keepRatio,
+            formulaVariant: 'v5_linear',
+            useGPU: false
+        }]);
+        const cpuSet = new Set(Array.from(cpuFiltered.getColumnByName('_cross_idx').data).map(v => Math.trunc(v)));
+
+        let gpuDevice: Awaited<ReturnType<typeof createDevice>> | null = null;
+        try {
+            gpuDevice = await createDevice();
+        } catch (e) {
+            t.skip(`WebGPU unavailable, skip GPU cross-check: ${e instanceof Error ? e.message : String(e)}`);
+            return;
+        }
+
+        const gpuTable = await loadTableWithIndex();
+        const gpuFiltered = await processDataTable(gpuTable, [{
+            kind: 'filterByPath',
+            poses,
+            nearPlane: near,
+            farPlane: far,
+            aspectRatio: aspect,
+            keepRatio,
+            formulaVariant: 'v5_linear',
+            useGPU: true
+        }], {
+            createDevice: async () => gpuDevice!
+        });
+        const gpuSet = new Set(Array.from(gpuFiltered.getColumnByName('_cross_idx').data).map(v => Math.trunc(v)));
+        gpuDevice.destroy();
+
+        let disagree = 0;
+        for (const idx of cpuSet) {
+            if (!gpuSet.has(idx)) disagree++;
+        }
+        for (const idx of gpuSet) {
+            if (!cpuSet.has(idx)) disagree++;
+        }
+        const maxDisagree = Math.floor(cpuTable.numRows * 0.005);
+        assert.ok(disagree <= maxDisagree, `gpu/cpu disagree=${disagree}, limit=${maxDisagree}`);
     });
 });

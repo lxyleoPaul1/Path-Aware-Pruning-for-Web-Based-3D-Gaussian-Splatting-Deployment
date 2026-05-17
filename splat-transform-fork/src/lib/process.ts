@@ -233,7 +233,7 @@ type FilterCluster = {
  * Options for processing actions that require external resources.
  */
 type ProcessOptions = {
-    /** Function to create a GPU device (required for filterFloaters, filterCluster). */
+    /** Function to create a GPU device (required for GPU filterByPath/filterFloaters/filterCluster). */
     createDevice?: DeviceCreator;
 };
 
@@ -249,7 +249,7 @@ type ProcessOptions = {
  * - `filterBands` - Remove spherical harmonic bands above a threshold
  * - `filterBox` - Keep splats within a bounding box
  * - `filterSphere` - Keep splats within a sphere
- * - `filterByPath` - Path-aware pruning (stub)
+ * - `filterByPath` - Path-aware pruning
  * - `lodBudgetPlan` - LOD budget planning (stub)
  * - `emitManifest` - Manifest emission (stub)
  * - `filterFloaters` - Remove splats not contributing to any occupied voxel (GPU)
@@ -595,7 +595,7 @@ const processDataTable = async (dataTable: DataTable, processActions: ProcessAct
             case 'filterByPath': {
                 const g = logger.group('Filter by path');
                 const prev = result;
-                result = filterByPath(
+                result = await filterByPath(
                     result,
                     processAction.poses,
                     processAction.keepRatio,
@@ -603,7 +603,8 @@ const processDataTable = async (dataTable: DataTable, processActions: ProcessAct
                     processAction.farPlane ?? 150.0,
                     processAction.aspectRatio ?? (16 / 9),
                     processAction.formulaVariant ?? 'v5_linear',
-                    processAction.useGPU ?? true
+                    processAction.useGPU ?? true,
+                    options?.createDevice
                 );
                 endFilterGroup(g, prev, result);
                 break;
