@@ -1,6 +1,6 @@
 import { Vec3 } from 'playcanvas';
 
-import { Column, DataTable, simplifyGaussians, sortMortonOrder, computeSummary, type SummaryData, convertToSpace, getSHBands } from './data-table';
+import { Column, DataTable, simplifyGaussians, sortMortonOrder, computeSummary, type SummaryData, convertToSpace, getSHBands, filterByPath } from './data-table';
 import type { DeviceCreator } from './types';
 import { fmtCount, type Group, logger, Transform } from './utils';
 import { filterCluster as filterClusterFn } from './voxel/filter-cluster';
@@ -593,7 +593,20 @@ const processDataTable = async (dataTable: DataTable, processActions: ProcessAct
                 break;
             }
             case 'filterByPath': {
-                throw new Error('not implemented');
+                const g = logger.group('Filter by path');
+                const prev = result;
+                result = filterByPath(
+                    result,
+                    processAction.poses,
+                    processAction.keepRatio,
+                    processAction.nearPlane ?? 0.1,
+                    processAction.farPlane ?? 150.0,
+                    processAction.aspectRatio ?? (16 / 9),
+                    processAction.formulaVariant ?? 'v5_linear',
+                    processAction.useGPU ?? true
+                );
+                endFilterGroup(g, prev, result);
+                break;
             }
             case 'lodBudgetPlan': {
                 throw new Error('not implemented');

@@ -1,6 +1,6 @@
 // Data table
-export { Column, DataTable, combine, convertToSpace, computeSummary, sortMortonOrder, sortByVisibility, computeFrustumPlanes, pointInFrustumBatch, computePathAwareImportanceV5, filterByPath, simplifyGaussians, getSHBands } from './data-table';
-export type { TypedArray, ColumnType, Row, PipelineMetadata, PathPose, FrustumPlane, ColumnStats, SummaryData } from './data-table';
+export { Column, DataTable, combine, convertToSpace, computeSummary, sortMortonOrder, sortByVisibility, filterByPath, simplifyGaussians, getSHBands } from './data-table';
+export type { TypedArray, ColumnType, Row, PipelineMetadata, ColumnStats, SummaryData } from './data-table';
 
 // Utils
 export {

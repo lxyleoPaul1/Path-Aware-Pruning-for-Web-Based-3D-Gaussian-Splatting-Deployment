@@ -1,7 +1,6 @@
 import { Column, DataTable } from './data-table';
 import { KdTree } from '../spatial/kd-tree';
 import { logger } from '../utils';
-import { quickselect } from '../utils/quickselect';
 
 const TWO_PI_POW_1_5 = Math.pow(2 * Math.PI, 1.5);
 const LOG2PI = Math.log(2 * Math.PI);
@@ -580,12 +579,16 @@ const sortByVisibility = (dataTable: DataTable, indices: Uint32Array): void => {
 
 type PathPose = {
     position: [number, number, number];
-    rotation_euler_deg: [number, number, number];
+    rotation: [number, number, number];
+    fovDegrees: number;
+    // Backward-compatible aliases for existing JS tests/callers.
+    rotation_euler_deg?: [number, number, number];
     fov_deg?: number;
     fov_degrees?: number;
 };
 
 type FrustumPlane = [number, number, number, number];
+type FormulaVariant = 'v5_linear' | 'v1_squared';
 
 const normalizePlane = (nx: number, ny: number, nz: number, px: number, py: number, pz: number): FrustumPlane => {
     const len = Math.hypot(nx, ny, nz) + 1e-12;
@@ -597,14 +600,7 @@ const normalizePlane = (nx: number, ny: number, nz: number, px: number, py: numb
     return [nnx, nny, nnz, d];
 };
 
-const computeFrustumPlanes = (
-    position: [number, number, number],
-    rotationEulerDeg: [number, number, number],
-    fovDeg: number,
-    aspect: number,
-    near: number,
-    far: number
-): FrustumPlane[] => {
+const computeFrustumPlanes = (pose: PathPose, near: number, far: number, aspect: number): FrustumPlane[] => {
     if (near <= 0 || far <= near) {
         throw new Error('frustum requires 0 < near < far');
     }
@@ -612,7 +608,15 @@ const computeFrustumPlanes = (
         throw new Error('aspect must be positive');
     }
 
-    const [px, py, pz] = position;
+    const [px, py, pz] = pose.position;
+    const rotationEulerDeg = pose.rotation ?? pose.rotation_euler_deg;
+    const fovDeg = pose.fovDegrees ?? pose.fov_deg ?? pose.fov_degrees;
+    if (!rotationEulerDeg) {
+        throw new Error('pose must contain rotation');
+    }
+    if (fovDeg === undefined) {
+        throw new Error('pose must contain fovDegrees');
+    }
     const [rxDeg, ryDeg, rzDeg] = rotationEulerDeg;
     const rx = rxDeg * Math.PI / 180;
     const ry = ryDeg * Math.PI / 180;
@@ -675,7 +679,8 @@ const computeFrustumPlanes = (
     return [nearPlane, farPlane, leftPlane, rightPlane, bottomPlane, topPlane];
 };
 
-const pointInFrustum = (x: number, y: number, z: number, planes: FrustumPlane[]): boolean => {
+const pointInFrustum = (point: [number, number, number], planes: FrustumPlane[]): boolean => {
+    const [x, y, z] = point;
     for (let i = 0; i < planes.length; i++) {
         const p = planes[i];
         if (p[0] * x + p[1] * y + p[2] * z + p[3] < 0) {
@@ -683,18 +688,6 @@ const pointInFrustum = (x: number, y: number, z: number, planes: FrustumPlane[])
         }
     }
     return true;
-};
-
-const pointInFrustumBatch = (
-    points: Float64Array | Float32Array,
-    planes: FrustumPlane[]
-): Uint8Array => {
-    const n = Math.floor(points.length / 3);
-    const out = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-        out[i] = pointInFrustum(points[i * 3], points[i * 3 + 1], points[i * 3 + 2], planes) ? 1 : 0;
-    }
-    return out;
 };
 
 const sigmoidStable = (x: number): number => {
@@ -705,18 +698,13 @@ const sigmoidStable = (x: number): number => {
     return ex / (1 + ex);
 };
 
-const parseFov = (pose: PathPose): number => {
-    if (pose.fov_deg !== undefined) return pose.fov_deg;
-    if (pose.fov_degrees !== undefined) return pose.fov_degrees;
-    throw new Error('pose must contain fov_deg or fov_degrees');
-};
-
-const computePathAwareImportanceV5 = (
+const computePathAwareImportance = (
     dataTable: DataTable,
     poses: PathPose[],
     near: number,
     far: number,
-    aspect: number
+    aspect: number,
+    formulaVariant: FormulaVariant
 ): Float64Array => {
     const xCol = dataTable.getColumnByName('x');
     const yCol = dataTable.getColumnByName('y');
@@ -734,14 +722,9 @@ const computePathAwareImportanceV5 = (
     }
 
     const n = dataTable.numRows;
-    const positions = new Float64Array(n * 3);
     const sigma = new Float64Array(n);
     const alpha = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-        positions[i * 3] = xCol.data[i];
-        positions[i * 3 + 1] = yCol.data[i];
-        positions[i * 3 + 2] = zCol.data[i];
-
         const sx = Math.exp(scale0Col.data[i]);
         const sy = Math.exp(scale1Col.data[i]);
         const sz = Math.exp(scale2Col.data[i]);
@@ -749,73 +732,111 @@ const computePathAwareImportanceV5 = (
         alpha[i] = sigmoidStable(opacityCol.data[i]);
     }
 
+    const planesByPose = poses.map(pose => computeFrustumPlanes(pose, near, far, aspect));
     const importance = new Float64Array(n);
-    for (let p = 0; p < poses.length; p++) {
-        const pose = poses[p];
-        const fov = parseFov(pose);
-        const planes = computeFrustumPlanes(
-            pose.position,
-            pose.rotation_euler_deg,
-            fov,
-            aspect,
-            near,
-            far
-        );
-        const visible = pointInFrustumBatch(positions, planes);
-        const [cx, cy, cz] = pose.position;
-        for (let i = 0; i < n; i++) {
-            if (!visible[i]) continue;
-            const dx = positions[i * 3] - cx;
-            const dy = positions[i * 3 + 1] - cy;
-            const dz = positions[i * 3 + 2] - cz;
+    for (let ii = 0; ii < n; ii++) {
+        const px = xCol.data[ii];
+        const py = yCol.data[ii];
+        const pz = zCol.data[ii];
+        const point: [number, number, number] = [px, py, pz];
+        const s = sigma[ii];
+        const a = alpha[ii];
+        let score = 0;
+        for (let p = 0; p < poses.length; p++) {
+            if (!pointInFrustum(point, planesByPose[p])) continue;
+            const cam = poses[p].position;
+            const dx = px - cam[0];
+            const dy = py - cam[1];
+            const dz = pz - cam[2];
             const d = Math.hypot(dx, dy, dz);
-            const falloff = d > 0 ? Math.min(1, sigma[i] / d) : 1;
-            importance[i] += falloff * alpha[i];
+            let w = 1;
+            if (d > 0) {
+                const ratio = s / d;
+                w = formulaVariant === 'v1_squared' ? Math.min(1, ratio * ratio) : Math.min(1, ratio);
+            }
+            score += w * a;
         }
+        importance[ii] = score;
     }
     return importance;
 };
 
-const topKByScore = (scores: Float64Array, keepCount: number): Uint32Array => {
-    const n = scores.length;
-    if (keepCount <= 0) return new Uint32Array(0);
-    if (keepCount >= n) {
-        const all = new Uint32Array(n);
-        for (let i = 0; i < n; i++) all[i] = i;
-        return all;
+const quickselect = (values: Float64Array, idx: Uint32Array, k: number): number => {
+    const swap = (a: number, b: number) => {
+        const t = idx[a];
+        idx[a] = idx[b];
+        idx[b] = t;
+    };
+    let left = 0;
+    let right = idx.length - 1;
+    while (left < right) {
+        const pivot = values[idx[(left + right) >>> 1]];
+        let i = left;
+        let j = right;
+        while (i <= j) {
+            while (values[idx[i]] < pivot) i++;
+            while (values[idx[j]] > pivot) j--;
+            if (i <= j) {
+                swap(i, j);
+                i++;
+                j--;
+            }
+        }
+        if (k <= j) {
+            right = j;
+        } else if (k >= i) {
+            left = i;
+        } else {
+            break;
+        }
     }
-    const idx = new Uint32Array(n);
-    for (let i = 0; i < n; i++) idx[i] = i;
-
-    // Partition so the highest keepCount scores live in the tail section.
-    quickselect(scores, idx, n - keepCount);
-    return idx.subarray(n - keepCount).slice();
+    return values[idx[k]];
 };
 
 const filterByPath = (
     dataTable: DataTable,
     poses: PathPose[],
     keepRatio: number,
-    near = 0.1,
-    far = 150,
-    aspect = 16 / 9
+    nearPlane = 0.1,
+    farPlane = 150,
+    aspectRatio = 16 / 9,
+    formulaVariant: FormulaVariant = 'v5_linear',
+    useGPU = true
 ): DataTable => {
     if (keepRatio < 0 || keepRatio > 1) {
         throw new Error(`keepRatio must be in [0, 1], got ${keepRatio}`);
     }
-    const keepCount = Math.min(dataTable.numRows, Math.max(0, Math.ceil(dataTable.numRows * keepRatio)));
-    const scores = computePathAwareImportanceV5(dataTable, poses, near, far, aspect);
-    const selected = topKByScore(scores, keepCount);
+    if (useGPU) {
+        // TODO(phase-2.4): plug in WebGPU compute path for filterByPath scoring.
+    }
 
-    const filtered = dataTable.clone({ rows: selected });
+    const near = nearPlane;
+    const far = farPlane;
+    const aspect = aspectRatio;
+    const keepCount = Math.min(dataTable.numRows, Math.max(0, Math.ceil(dataTable.numRows * keepRatio)));
+    const scores = computePathAwareImportance(dataTable, poses, near, far, aspect, formulaVariant);
+    let selectedRows: Uint32Array;
+    if (keepCount <= 0) {
+        selectedRows = new Uint32Array(0);
+    } else if (keepCount >= scores.length) {
+        selectedRows = new Uint32Array(scores.length);
+        for (let i = 0; i < scores.length; i++) selectedRows[i] = i;
+    } else {
+        const idx = new Uint32Array(scores.length);
+        for (let i = 0; i < idx.length; i++) idx[i] = i;
+        const thresholdIndex = scores.length - keepCount;
+        quickselect(scores, idx, thresholdIndex);
+        selectedRows = idx.subarray(thresholdIndex).slice();
+    }
+
+    const filtered = dataTable.clone({ rows: selectedRows });
     filtered.pipelineMetadata.pruning = {
-        method: 'path-aware-v5',
+        method: formulaVariant === 'v1_squared' ? 'path-aware-v1' : 'path-aware-v5',
         numPoses: poses.length,
         keepRatio,
         originalSplats: dataTable.numRows,
         retainedSplats: filtered.numRows
     };
-    // TODO(phase-2.4): swap CPU score accumulation with WebGPU compute shader path.
     return filtered;
 };
 
@@ -1110,5 +1131,4 @@ const simplifyGaussians = (dataTable: DataTable, targetCount: number): DataTable
     return current;
 };
 
-export { sortByVisibility, computeFrustumPlanes, pointInFrustumBatch, computePathAwareImportanceV5, filterByPath, simplifyGaussians };
-export type { PathPose, FrustumPlane };
+export { sortByVisibility, filterByPath, simplifyGaussians };

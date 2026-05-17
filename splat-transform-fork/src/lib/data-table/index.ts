@@ -1,8 +1,7 @@
 export { Column, DataTable } from './data-table';
 export type { TypedArray, ColumnType, Row, PipelineMetadata } from './data-table';
 export { combine } from './combine';
-export { sortByVisibility, computeFrustumPlanes, pointInFrustumBatch, computePathAwareImportanceV5, filterByPath, simplifyGaussians } from './decimate';
-export type { PathPose, FrustumPlane } from './decimate';
+export { sortByVisibility, filterByPath, simplifyGaussians } from './decimate';
 export { computeGaussianExtents } from './gaussian-aabb';
 export type { Bounds, GaussianExtentsResult } from './gaussian-aabb';
 export { evaluateGaussianAt, computeGaussianInverse } from './gaussian-eval';
