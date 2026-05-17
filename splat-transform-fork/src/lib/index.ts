@@ -29,6 +29,8 @@ export type {
     FilterBox,
     FilterSphere,
     FilterByPath,
+    LodBudgetPlan,
+    EmitManifest,
     FilterFloaters,
     FilterCluster,
     Param as ProcessParam,

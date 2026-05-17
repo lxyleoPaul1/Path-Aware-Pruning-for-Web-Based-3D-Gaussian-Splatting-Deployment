@@ -1,6 +1,6 @@
 import { Vec3 } from 'playcanvas';
 
-import { Column, DataTable, simplifyGaussians, sortMortonOrder, computeSummary, type SummaryData, convertToSpace, getSHBands, filterByPath, type PathPose } from './data-table';
+import { Column, DataTable, simplifyGaussians, sortMortonOrder, computeSummary, type SummaryData, convertToSpace, getSHBands } from './data-table';
 import type { DeviceCreator } from './types';
 import { fmtCount, type Group, logger, Transform } from './utils';
 import { filterCluster as filterClusterFn } from './voxel/filter-cluster';
@@ -109,16 +109,32 @@ type FilterSphere = {
 type FilterByPath = {
     /** Action type identifier. */
     kind: 'filterByPath';
-    /** Keep ratio in [0, 1]. */
+    poses: Array<{
+        position: [number, number, number];
+        rotation: [number, number, number];
+        fovDegrees: number;
+    }>;
+    nearPlane: number;
+    farPlane: number;
+    aspectRatio: number;
     keepRatio: number;
-    /** Camera path for scoring. */
-    poses: PathPose[];
-    /** Near clipping plane. */
-    near?: number;
-    /** Far clipping plane. */
-    far?: number;
-    /** Aspect ratio. */
-    aspect?: number;
+    formulaVariant: 'v5_linear' | 'v1_squared';
+    useGPU: boolean;
+};
+
+type LodBudgetPlan = {
+    kind: 'lodBudgetPlan';
+    budgetMB: number;
+    numLevels: number;
+    maxDistance: number;
+    strategy: 'geometric' | 'dp';
+    writePlanTo?: string;
+};
+
+type EmitManifest = {
+    kind: 'emitManifest';
+    output: string;
+    includeChunkAABB: boolean;
 };
 
 /**
@@ -233,7 +249,9 @@ type ProcessOptions = {
  * - `filterBands` - Remove spherical harmonic bands above a threshold
  * - `filterBox` - Keep splats within a bounding box
  * - `filterSphere` - Keep splats within a sphere
- * - `filterByPath` - Keep top path-aware v5 scored splats
+ * - `filterByPath` - Path-aware pruning (stub)
+ * - `lodBudgetPlan` - LOD budget planning (stub)
+ * - `emitManifest` - Manifest emission (stub)
  * - `filterFloaters` - Remove splats not contributing to any occupied voxel (GPU)
  * - `filterCluster` - Keep splats in the connected cluster at a seed position (GPU)
  * - `lod` - Assign LOD level to all splats
@@ -241,7 +259,7 @@ type ProcessOptions = {
  * - `mortonOrder` - Reorder splats by Morton code for spatial locality
  * - `decimate` - Simplify to target count via progressive pairwise merging
  */
-type ProcessAction = Translate | Rotate | Scale | FilterNaN | FilterByValue | FilterBands | FilterBox | FilterSphere | FilterByPath | FilterFloaters | FilterCluster | Param | Lod | Summary | MortonOrder | Decimate;
+type ProcessAction = Translate | Rotate | Scale | FilterNaN | FilterByValue | FilterBands | FilterBox | FilterSphere | FilterByPath | LodBudgetPlan | EmitManifest | FilterFloaters | FilterCluster | Param | Lod | Summary | MortonOrder | Decimate;
 
 const SH_C0 = 0.28209479177387814;
 
@@ -395,6 +413,7 @@ const filter = (dataTable: DataTable, predicate: (row: any, rowIndex: number) =>
  */
 const processDataTable = async (dataTable: DataTable, processActions: ProcessAction[], options?: ProcessOptions): Promise<DataTable> => {
     let result = dataTable;
+    result.pipelineMetadata = {};
 
     for (let i = 0; i < processActions.length; i++) {
         const processAction = processActions[i];
@@ -574,17 +593,13 @@ const processDataTable = async (dataTable: DataTable, processActions: ProcessAct
                 break;
             }
             case 'filterByPath': {
-                const g = logger.group('Filter by path (v5)');
-                const prev = result;
-                result = filterByPath(
-                    result,
-                    processAction.poses,
-                    processAction.keepRatio,
-                    processAction.near,
-                    processAction.far,
-                    processAction.aspect
-                );
-                endFilterGroup(g, prev, result);
+                throw new Error('not implemented');
+            }
+            case 'lodBudgetPlan': {
+                throw new Error('not implemented');
+            }
+            case 'emitManifest': {
+                throw new Error('not implemented');
                 break;
             }
             case 'param': {
@@ -672,6 +687,8 @@ export {
     type FilterBox,
     type FilterSphere,
     type FilterByPath,
+    type LodBudgetPlan,
+    type EmitManifest,
     type FilterFloaters,
     type FilterCluster,
     type Param,

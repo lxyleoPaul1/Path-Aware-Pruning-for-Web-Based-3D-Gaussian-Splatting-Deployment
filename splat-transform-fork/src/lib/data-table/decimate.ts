@@ -808,7 +808,13 @@ const filterByPath = (
     const selected = topKByScore(scores, keepCount);
 
     const filtered = dataTable.clone({ rows: selected });
-    filtered.pipelineMetadata.pruning = 'path-aware-v5';
+    filtered.pipelineMetadata.pruning = {
+        method: 'path-aware-v5',
+        numPoses: poses.length,
+        keepRatio,
+        originalSplats: dataTable.numRows,
+        retainedSplats: filtered.numRows
+    };
     // TODO(phase-2.4): swap CPU score accumulation with WebGPU compute shader path.
     return filtered;
 };

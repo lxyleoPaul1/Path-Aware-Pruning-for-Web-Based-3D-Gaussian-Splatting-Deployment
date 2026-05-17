@@ -58,10 +58,19 @@ type Row = {
     [colName: string]: number;
 };
 
-type PipelineMetadata = {
-    pruning?: string;
-    [key: string]: unknown;
-};
+interface PipelineMetadata {
+    pruning?: {
+        method: 'path-aware-v5' | 'path-aware-v1';
+        numPoses: number;
+        keepRatio: number;
+        originalSplats: number;
+        retainedSplats: number;
+    };
+    lodPlan?: {
+        levels: Array<{ level: number; splats: number; recommendedMaxDistance: number }>;
+    };
+    sourceFile?: string;
+}
 
 /**
  * A table of columnar data representing Gaussian splat properties.
