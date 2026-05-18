@@ -196,6 +196,7 @@ describe('crossref py-ts fixture', () => {
             farPlane: far,
             aspectRatio: aspect,
             keepRatio,
+            safeguardRatio: 0,
             formulaVariant: 'v5_linear',
             useGPU: false
         }]);
@@ -238,6 +239,7 @@ describe('crossref py-ts fixture', () => {
             farPlane: far,
             aspectRatio: aspect,
             keepRatio,
+            safeguardRatio: 0,
             formulaVariant: 'v5_linear',
             useGPU: false
         }]);
@@ -259,6 +261,7 @@ describe('crossref py-ts fixture', () => {
             farPlane: far,
             aspectRatio: aspect,
             keepRatio,
+            safeguardRatio: 0,
             formulaVariant: 'v5_linear',
             useGPU: true
         }], {

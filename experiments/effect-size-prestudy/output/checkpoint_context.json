@@ -1,0 +1,17 @@
+{
+  "original_input": "F:\\PAPER\\splattransform\\point_cloud_2.ply",
+  "used_input": "F:\\PAPER\\splattransform\\point_cloud_2.ply",
+  "poses_path": "F:\\PAPER\\splattransform\\experiments\\effect-size-prestudy\\data\\orbit_poses.json",
+  "M": 744614,
+  "bbox_min": [
+    -13.827028274536133,
+    -13.978928565979004,
+    -4.743602275848389
+  ],
+  "bbox_max": [
+    14.089792251586914,
+    21.673749923706055,
+    5.9645304679870605
+  ],
+  "nan_count": 0
+}

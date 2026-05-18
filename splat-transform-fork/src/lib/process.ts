@@ -118,6 +118,8 @@ type FilterByPath = {
     farPlane: number;
     aspectRatio: number;
     keepRatio: number;
+    safeguardRatio?: number;
+    safeguardSeed?: number;
     formulaVariant: 'v5_linear' | 'v1_squared';
     useGPU: boolean;
 };
@@ -604,7 +606,11 @@ const processDataTable = async (dataTable: DataTable, processActions: ProcessAct
                     processAction.aspectRatio ?? (16 / 9),
                     processAction.formulaVariant ?? 'v5_linear',
                     processAction.useGPU ?? true,
-                    options?.createDevice
+                    {
+                        safeguardRatio: processAction.safeguardRatio ?? 0.02,
+                        safeguardSeed: processAction.safeguardSeed ?? 20260517,
+                        createDevice: options?.createDevice
+                    }
                 );
                 endFilterGroup(g, prev, result);
                 break;

@@ -1,0 +1,18 @@
+{
+  "name": "effect-size-prestudy",
+  "version": "1.0.0",
+  "description": "This Python (uv-managed) track is for pilot runs to estimate effect sizes, variance, and feasible sample sizes. Use it to de-risk the main study protocol before committing large compute or participant budgets.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}

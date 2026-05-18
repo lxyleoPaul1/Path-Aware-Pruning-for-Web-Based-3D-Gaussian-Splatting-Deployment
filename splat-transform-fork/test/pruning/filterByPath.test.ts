@@ -89,6 +89,7 @@ describe('filterByPath', () => {
             farPlane: 10,
             aspectRatio: 16 / 9,
             keepRatio: 0.001,
+            safeguardRatio: 0,
             formulaVariant: 'v5_linear',
             useGPU: false
         }]);
@@ -139,6 +140,7 @@ describe('filterByPath', () => {
             farPlane: 20,
             aspectRatio: 1,
             keepRatio: 0.5,
+            safeguardRatio: 0,
             formulaVariant: 'v5_linear',
             useGPU: false
         }]);
@@ -172,6 +174,7 @@ describe('filterByPath', () => {
                 farPlane: 150,
                 aspectRatio: 16 / 9,
                 keepRatio,
+                safeguardRatio: 0,
                 formulaVariant: 'v5_linear',
                 useGPU: false
             }]);

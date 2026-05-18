@@ -63,6 +63,8 @@ interface PipelineMetadata {
         method: 'path-aware-v5' | 'path-aware-v1';
         numPoses: number;
         keepRatio: number;
+        safeguardRatio?: number;
+        safeguardSeed?: number;
         originalSplats: number;
         retainedSplats: number;
     };

@@ -864,6 +864,20 @@ const quickselect = (values: Float64Array, idx: Uint32Array, k: number): number 
     return values[idx[k]];
 };
 
+const sampleSafeguardRows = (candidates: Uint32Array, count: number, seed: number): Uint32Array => {
+    const n = candidates.length;
+    const m = Math.min(n, Math.max(0, count));
+    const out = candidates.slice();
+    const rand = mulberry32(seed);
+    for (let i = 0; i < m; i++) {
+        const j = i + Math.floor(rand() * (n - i));
+        const tmp = out[i];
+        out[i] = out[j];
+        out[j] = tmp;
+    }
+    return out.subarray(0, m).slice();
+};
+
 const filterByPath = (
     dataTable: DataTable,
     poses: PathPose[],
@@ -873,11 +887,21 @@ const filterByPath = (
     aspectRatio = 16 / 9,
     formulaVariant: FormulaVariant = 'v5_linear',
     useGPU = true,
-    createDevice?: DeviceCreator
+    options?: {
+        safeguardRatio?: number;
+        safeguardSeed?: number;
+        createDevice?: DeviceCreator;
+    }
 ): Promise<DataTable> => {
     const run = async () => {
+    const safeguardRatio = options?.safeguardRatio ?? 0.02;
+    const safeguardSeed = options?.safeguardSeed ?? 20260517;
+    const createDevice = options?.createDevice;
     if (keepRatio < 0 || keepRatio > 1) {
         throw new Error(`keepRatio must be in [0, 1], got ${keepRatio}`);
+    }
+    if (safeguardRatio < 0 || safeguardRatio > 0.05) {
+        throw new Error(`safeguardRatio must be in [0, 0.05], got ${safeguardRatio}`);
     }
 
     const near = nearPlane;
@@ -897,8 +921,12 @@ const filterByPath = (
         scores = computePathAwareImportance(dataTable, poses, near, far, aspect, formulaVariant);
     }
     let selectedRows: Uint32Array;
+    let safeguardRows: Uint32Array<ArrayBufferLike> = new Uint32Array(0);
     if (keepCount <= 0) {
         selectedRows = new Uint32Array(0);
+        const allRows = new Uint32Array(scores.length);
+        for (let i = 0; i < allRows.length; i++) allRows[i] = i;
+        safeguardRows = sampleSafeguardRows(allRows, Math.ceil(scores.length * safeguardRatio), safeguardSeed);
     } else if (keepCount >= scores.length) {
         selectedRows = new Uint32Array(scores.length);
         for (let i = 0; i < scores.length; i++) selectedRows[i] = i;
@@ -908,6 +936,17 @@ const filterByPath = (
         const thresholdIndex = scores.length - keepCount;
         quickselect(scores, idx, thresholdIndex);
         selectedRows = idx.subarray(thresholdIndex).slice();
+        safeguardRows = sampleSafeguardRows(
+            idx.subarray(0, thresholdIndex),
+            Math.ceil(thresholdIndex * safeguardRatio),
+            safeguardSeed
+        );
+    }
+    if (safeguardRows.length > 0) {
+        const merged = new Uint32Array(selectedRows.length + safeguardRows.length);
+        merged.set(selectedRows, 0);
+        merged.set(safeguardRows, selectedRows.length);
+        selectedRows = merged;
     }
 
     const filtered = dataTable.clone({ rows: selectedRows });
@@ -915,6 +954,8 @@ const filterByPath = (
         method: formulaVariant === 'v1_squared' ? 'path-aware-v1' : 'path-aware-v5',
         numPoses: poses.length,
         keepRatio,
+        safeguardRatio,
+        safeguardSeed,
         originalSplats: dataTable.numRows,
         retainedSplats: filtered.numRows
     };

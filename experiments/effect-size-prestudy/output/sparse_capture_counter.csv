@@ -1,0 +1,6 @@
+scene,capture,method,keep_ratio,mean_psnr,n_train_poses
+counter,sparse,random,0.5,24.135059,42
+counter,sparse,visibility,0.5,23.300177,42
+counter,sparse,path_aware,0.5,23.145501,42
+counter,sparse,path_aware_v5_linear_falloff,0.5,24.217781,42
+counter,sparse,raster_importance,0.5,36.169034,42

@@ -1,0 +1,6 @@
+method,keep_ratio,n_train_sparse,mean_psnr
+random,0.5,49,19.772308
+visibility,0.5,49,18.464336
+path_aware,0.5,49,22.675549
+combined_0.7,0.5,49,23.343133
+raster_importance,0.5,49,29.935862
