@@ -30,8 +30,11 @@ __pycache__/
 venv/
 env/
 
-# 3DGS / scene assets: keep large raw or packed assets out of git
+# 3DGS / scene assets (allow benchmark data under effect-size-prestudy/data/)
 *.ply
+!experiments/effect-size-prestudy/data/
+!experiments/effect-size-prestudy/data/**/
+!experiments/effect-size-prestudy/data/**/*.ply
 *.splat
 *.sog
 *.spz
@@ -39,6 +42,9 @@ env/
 *.lcc
 *.glb
 *.bin
+!experiments/effect-size-prestudy/data/
+!experiments/effect-size-prestudy/data/**/
+!experiments/effect-size-prestudy/data/**/*.bin
 *.npz
 *.npy
 *.pt
@@ -50,7 +56,8 @@ checkpoint/
 models/
 model/
 weights/
-data/
+/data/
+!experiments/effect-size-prestudy/data/
 datasets/
 
 # Evaluation caches and temporary render outputs

@@ -145,7 +145,7 @@ npm test
 npm run build
 ```
 
-Some large datasets and generated render caches are intentionally ignored by Git. Keep source code, scripts, CSV summaries, and lightweight figures under version control; keep raw benchmark assets and bulky caches out of commits.
+The five benchmark scenes (`kitchen`, `room`, `counter`, `truck`, `train`) live under `experiments/effect-size-prestudy/data/` and are tracked with **Git LFS** (~2.3 GB). After cloning, run `git lfs install && git lfs pull`. To rebuild locally from upstream 3DGS checkpoints, see `experiments/effect-size-prestudy/scripts/setup_benchmark_data.sh`. Render caches under `experiments/**/output/cache/` remain gitignored.
 
 ## Paper
 
