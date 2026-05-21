@@ -2,3 +2,4 @@ method,n_splats,n_poses,wall_clock_sec
 path_aware_v1,1852335,49,6.651821
 path_aware_v5_linear_falloff,1852335,49,6.621376
 raster_importance,1852335,49,0.895267
+path_aware_v5_pure_sum,1852335,49,8.386771
